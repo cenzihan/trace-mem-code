@@ -11,10 +11,13 @@ and bounded original-source windows. The v0.2.1 HTTPS preflight passed with
 5 actual GPT calls and6 embedding calls on real public engineering history.
 This is an engineering check, not an official benchmark score.
 
-Version v0.2.2 adds a [shared endpoint gateway](docs/shared-endpoint.md) for
-the existing key's Coding and Multimodal tracks. It preserves independent
-repositories, models and stores while using the already registered API URLs.
-Its100 offline checks include routing, exact byte forwarding and zero retries.
+The existing Academic key supports Coding and Multimodal; another access key
+is not required. The v0.2.2 [shared endpoint gateway](docs/shared-endpoint.md)
+has been withdrawn from the registered route: the official contract permits
+plain-string Multimodal requests, so payload types cannot identify a track.
+Use an explicitly selected fixed backend for sequential evaluations. The two
+repositories, models and stores remain independent. The100 offline checks do
+not establish compatibility with every official request format.
 
 ## Model rules
 
