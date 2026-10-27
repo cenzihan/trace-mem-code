@@ -9,6 +9,10 @@ The [v0.2.3-rc3 long-trajectory candidate](docs/long-trajectory-candidate.md)
 expands source admission and reserves query calls before whole-Add dispatch.
 It is an offline candidate; the deployed v0.2.2 profile is unchanged.
 
+The separate [raw-trajectory candidate](docs/raw-trajectory-candidate.md) indexes
+new source spans without GPT summaries, while preserving the original state,
+ledger and512-call ceiling. It is also offline only and has no official score.
+
 The official v0.2 profile uses
 [DSH-inspired source/context separation](docs/deepseek-harness-adaptation.md)
 and bounded original-source windows. The v0.2.1 HTTPS preflight passed with
