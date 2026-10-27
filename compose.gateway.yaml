@@ -1,0 +1,30 @@
+# Start only after both fixed component deployments are ready. No provider keys
+# or memory volumes belong in this stateless gateway.
+services:
+  gateway:
+    image: trace-mem-code:v0.2.2
+    init: true
+    restart: unless-stopped
+    network_mode: host
+    command: [gunicorn, --config, /app/deploy/gunicorn.conf.py, --bind, '127.0.0.1:8771', --threads, '36', --max-requests, '0', 'agent_memory.multitrack_gateway:create_app()']
+    environment:
+      TRACEMEM_GATEWAY_ENABLED: documented-multitrack-v1
+      TRACEMEM_GATEWAY_EXPIRES_AT: ${TRACEMEM_GATEWAY_EXPIRES_AT:?use the existing lease}
+      TRACEMEM_AUTH_TOKEN_FILE: /run/secrets/service_token
+    volumes:
+      - ${TRACEMEM_REGISTERED_TOKEN_FILE:?existing AML token file}:/run/secrets/service_token:ro
+    read_only: true
+    tmpfs: ['/tmp:size=32m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8771/health',timeout=12).read()"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: 1m, max-file: '2'}

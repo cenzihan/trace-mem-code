@@ -5,9 +5,16 @@ This is a separate repository from [TraceMem-MM](https://github.com/cenzihan/tra
 It retrieves earlier engineering evidence; it does not solve the platform's tasks
 or execute retrieved code. No official Coding score is claimed.
 
-The `codex/dsh-source-context` candidate studies
-[DSH-inspired source/context separation](docs/deepseek-harness-adaptation.md).
-Its opt-in source windows are offline-tested; the deployedv0.1 service remains fixed.
+The official v0.2 profile uses
+[DSH-inspired source/context separation](docs/deepseek-harness-adaptation.md)
+and bounded original-source windows. The v0.2.1 HTTPS preflight passed with
+5 actual GPT calls and6 embedding calls on real public engineering history.
+This is an engineering check, not an official benchmark score.
+
+Version v0.2.2 adds a [shared endpoint gateway](docs/shared-endpoint.md) for
+the existing key's Coding and Multimodal tracks. It preserves independent
+repositories, models and stores while using the already registered API URLs.
+Its100 offline checks include routing, exact byte forwarding and zero retries.
 
 ## Model rules
 
