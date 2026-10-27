@@ -84,6 +84,9 @@ def sparse_scores(query_tokens, documents):
 
 
 class CodingMemorySystem(AgentMemorySystem):
+    message_source_bytes = 128 * 1024
+    add_source_bytes = 8 * 1024 * 1024
+    add_segments = ADD_SEGMENTS
     def __init__(self, path, *, embedding=None, card_adapter=None, scoring_adapter=None,
                  return_bytes=RETURN_BYTES, anchor_channel=True,
                  context_policy='matched-spans', context_window_bytes=12288):
@@ -167,13 +170,17 @@ class CodingMemorySystem(AgentMemorySystem):
             raise ContractError('Coding messages[].content must be a string')
         if len(payload['messages']) > self.model_add_message_limit:
             raise ContractError(f'coding capacity:{self.model_add_message_limit} messages per Add', 413)
-        count = 0
+        count = total = 0
         for message in payload['messages']:
-            if len(message['content'].encode('utf-8')) > 128*1024:
-                raise ContractError('coding capacity:128KiB per message', 413)
+            size = len(message['content'].encode('utf-8'))
+            if size > self.message_source_bytes:
+                raise ContractError(f'coding capacity:message_source_bytes limit={self.message_source_bytes}', 413)
+            total += size
+            if total > self.add_source_bytes:
+                raise ContractError(f'coding capacity:add_source_bytes limit={self.add_source_bytes}', 413)
             count += sum(1 for _ in segments(message['content']))
-        if count > ADD_SEGMENTS:
-            raise ContractError('coding capacity:64 source segments per Add', 413)
+            if count > self.add_segments:
+                raise ContractError(f'coding capacity:source_segments limit={self.add_segments}', 413)
         return super().add(payload)
 
     def _check_dense_scope(self, db, payload):

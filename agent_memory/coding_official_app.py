@@ -25,7 +25,7 @@ class OfficialCodingMemory(CodingMemorySystem):
     model_add_message_limit = 20
 
 
-def create_app(environ=None):
+def create_app(environ=None, *, memory_type=OfficialCodingMemory, version=VERSION):
     env = os.environ if environ is None else environ
     if env.get('TRACEMEM_CODING_ENABLED') != 'official-original-ledger-v0.2':
         raise ValueError('explicit versioned Coding activation required')
@@ -42,13 +42,13 @@ def create_app(environ=None):
                [('gpt-4o-mini','TRACEMEM_OPENAI_TOKEN_FILE'),('text-embedding-v4','TRACEMEM_BAILIAN_TOKEN_FILE')]}
     transport = OfficialCodingTransport(SHARED_LEDGER,env['TRACEMEM_LEDGER_AUTHORITY_FILE'],
         env['TRACEMEM_VERIFIED_PRICES_FILE'],state/'receipts',readers,call_limit=512)
-    store = OfficialCodingMemory(state/'memory.sqlite',context_policy='source-window',
+    store = memory_type(state/'memory.sqlite',context_policy='source-window',
         card_adapter=CodingCards(transport,structured_output=True),
         embedding=TextEmbeddingV4(BAILIAN_BEIJING_ENDPOINT,transport,dimensions=256))
     capabilities = store.capabilities
-    store.capabilities = lambda:dict(capabilities(),version=VERSION,
+    store.capabilities = lambda:dict(capabilities(),version=version,
         deployment_profile='coding-official-v0.2',release_stage='access-candidate',
-        source_card_format='strict-json-schema',max_add_messages=20,
+        source_card_format='strict-json-schema',max_add_messages=store.model_add_message_limit,
         concurrency=16,model_concurrency=1,receipt_content_logging=False)
     return ServiceApplication(store,transport,read_service_token(env['TRACEMEM_AUTH_TOKEN_FILE']),
         scorer_health=lambda:None,expires_at=expires,admission_capacity=16,queue_wait_seconds=30)

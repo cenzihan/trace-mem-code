@@ -32,6 +32,7 @@ class RetrievalConfig:
 
 class AgentMemorySystem(MemoryStore):
     model_add_message_limit = 16
+    dense_add_message_limit = 100
 
     def __init__(self, path, retrieval=None, embedding=None, card_adapter=None, scoring_adapter=None):
         super().__init__(path)
@@ -156,18 +157,21 @@ class AgentMemorySystem(MemoryStore):
             db.execute('BEGIN')
             if self._request_ready(db,payload,digest):return self._echo(payload)
             self._check_dense_scope(db,payload)
+        self._preflight_add(payload)
+        with self._model_operation(payload,digest) as operation:
+            if operation is False:return self._echo(payload)
+            return self._execute_add(payload,operation_token=operation)
+
+    def _preflight_add(self, payload):
         if self.card_adapter is not None and len(payload['messages'])>self.model_add_message_limit:
             raise ContractError(f'local model-assisted Add capacity is {self.model_add_message_limit} messages',413)
-        if self.retrieval.dense and len(payload['messages'])>100:
-            raise ContractError('local dense Add capacity is 100 messages',413)
+        if self.retrieval.dense and len(payload['messages'])>self.dense_add_message_limit:
+            raise ContractError(f'local dense Add capacity is {self.dense_add_message_limit} messages',413)
         # Validate every explicit timestamp before claiming or charging any model work.
         for message in payload['messages']:
             for fact in derive(text_of(content_parts(message['content'])))['facts']:
                 try:datetime.fromisoformat(fact['event'].replace('Z','+00:00'))
                 except ValueError:raise ContractError('invalid explicit fact event timestamp',422) from None
-        with self._model_operation(payload,digest) as operation:
-            if operation is False:return self._echo(payload)
-            return self._execute_add(payload,operation_token=operation)
 
     def _echo(self,payload):
         return dict(success=True,**{key:payload[key] for key in ('request_id','user_id','session_id')})
