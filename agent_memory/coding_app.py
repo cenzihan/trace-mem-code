@@ -18,10 +18,11 @@ from .service_transport import ServiceTransport
 class CodingServiceTransport(ServiceTransport):
     """Finite lifetime call counter over receipts, never another money ledger."""
     journal_scope = 'coding-development-v1'
+    max_call_limit = 64
 
     def __init__(self,*args,call_limit,**kwargs):
-        if type(call_limit) is not int or not 1 <= call_limit <= 64:
-            raise ValueError('explicit1..64 provider-call development cap required')
+        if type(call_limit) is not int or not 1 <= call_limit <= self.max_call_limit:
+            raise ValueError(f'explicit1..{self.max_call_limit} provider-call cap required')
         self.call_limit = call_limit
         super().__init__(*args,**kwargs)
         self.limit_path = self.journal.root/'coding-call-limit.json'

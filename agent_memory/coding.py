@@ -13,6 +13,7 @@ import re
 from .protocol import ContractError, canonical, validate_add, validate_search
 from .retrieval import cosine, ranked, rrf
 from .system import AgentMemorySystem, RetrievalConfig
+from .coding_context import SourceSpan, source_window
 
 
 VERSION = 'tracemem-code-v0.1.0'
@@ -84,7 +85,12 @@ def sparse_scores(query_tokens, documents):
 
 class CodingMemorySystem(AgentMemorySystem):
     def __init__(self, path, *, embedding=None, card_adapter=None, scoring_adapter=None,
-                 return_bytes=RETURN_BYTES, anchor_channel=True):
+                 return_bytes=RETURN_BYTES, anchor_channel=True,
+                 context_policy='matched-spans', context_window_bytes=12288):
+        if context_policy not in ('matched-spans','source-window'):
+            raise ValueError('unknown coding context policy')
+        if type(context_window_bytes) is not int or not SEGMENT_BYTES <= context_window_bytes <= RETURN_BYTES:
+            raise ValueError('coding context window must be4096..32768 UTF-8 bytes')
         if embedding is not None and (getattr(embedding, 'model', None) != 'text-embedding-v4'
                                       or getattr(embedding, 'dimensions', None) != 256):
             raise ValueError('fixed text-embedding-v4 256-dimensional adapter required')
@@ -99,6 +105,7 @@ class CodingMemorySystem(AgentMemorySystem):
                          image_identity=False, dense=embedding is not None),
                          embedding=embedding, card_adapter=card_adapter)
         self.scoring_adapter = scoring_adapter
+        self.context_policy,self.context_window_bytes=context_policy,context_window_bytes
         self.return_bytes, self.anchor_channel = return_bytes, anchor_channel
         with self.connect() as db:
             if db.execute('SELECT count(*) FROM memories').fetchone()[0] and not db.execute(
@@ -114,20 +121,52 @@ class CodingMemorySystem(AgentMemorySystem):
             ''')
 
     def capabilities(self):
-        return dict(super().capabilities(), version=VERSION, track='coding',
+        return dict(super().capabilities(), version=VERSION if self.context_policy=='matched-spans' else 'tracemem-code-v0.2-context-dev', track='coding',
                     deployment_profile='coding_candidate', release_stage='development_candidate',
                     retrieval='code-BM25+exact-anchors'+('+dense-RRF' if self.embedding else ''),
                     reranker='original-pinned-Qwen' if self.scoring_adapter else 'disabled',
                     response_content='exact-source-text-spans', segment_bytes=SEGMENT_BYTES,
                     return_text_bytes=self.return_bytes, candidate_limit=100,
+                    context_policy=self.context_policy,
                     platform_answer_generated=False, official_score=False)
+
+    def _source_windows(self, order, scores, rows, payload):
+        """Project independently ranked hits without changing the candidate scores."""
+        uid=payload['user_id'];groups={};rowmap={row[0]:row for row in rows}
+        for row in rows:
+            groups.setdefault(row[1],[]).append(SourceSpan(row[0],row[1],uid,row[2],row[3],row[4]))
+        result=[];selected=set();seen_hashes=set();used=0;projections=[]
+        for sid in order:
+            if len(result)>=payload['top_k']:break
+            row=rowmap[sid];mid=row[1]
+            if mid in selected:continue
+            with self.connect() as db:
+                stored=db.execute('SELECT content FROM memories WHERE user_id=? AND id=?',(uid,mid)).fetchone()
+            if stored is None:raise ContractError('source removed during projection',503)
+            parts=json.loads(stored[0])
+            if len(parts)!=1 or parts[0].get('type')!='text':
+                raise ContractError('coding source format mismatch',503)
+            try:
+                window=source_window(parts[0]['text'],groups[mid],sid,user_id=uid,parent_id=mid,
+                                     max_bytes=min(self.context_window_bytes,self.return_bytes-used))
+            except ValueError as exc:
+                raise ContractError(str(exc),503) from exc
+            if window is None or not window.content.strip():continue
+            if window.sha256 in seen_hashes:continue
+            result.append(dict(id=window.id,content=window.content,score=scores[sid],created_at=row[9]))
+            selected.add(mid);seen_hashes.add(window.sha256);used+=len(window.content.encode())
+            projections.append(dict(id=window.id,matched_id=window.matched_id,
+                                    source_ids=list(window.source_ids),sha256=window.sha256))
+        return {'data':result},{'source_segments':len(rows),'candidate_count':len(order),
+            'returned_utf8_bytes':used,'exact_source_spans':True,'dense_enabled':self.embedding is not None,
+            'context_policy':'source-window','projections':projections,'official_score':False}
 
     def add(self, payload):
         validate_add(payload)
         if any(not isinstance(message['content'], str) for message in payload['messages']):
             raise ContractError('Coding messages[].content must be a string')
-        if len(payload['messages']) > 16:
-            raise ContractError('coding capacity:16 messages per Add', 413)
+        if len(payload['messages']) > self.model_add_message_limit:
+            raise ContractError(f'coding capacity:{self.model_add_message_limit} messages per Add', 413)
         count = 0
         for message in payload['messages']:
             if len(message['content'].encode('utf-8')) > 128*1024:
@@ -261,6 +300,8 @@ class CodingMemorySystem(AgentMemorySystem):
             if len(values)!=len(order) or any(type(v) not in (int,float) or not math.isfinite(v) for v in values):
                 raise ValueError('invalid coding candidate scores')
             scores = dict(zip(order,values)); order = ranked(scores)
+        if self.context_policy=='source-window':
+            return self._source_windows(order,scores,rows,payload)
         result, used, counts, seen, parents = [], 0, Counter(), set(), {}
         for sid in order:
             row = rowmap[sid]; mid=row[1]

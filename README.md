@@ -5,6 +5,10 @@ This is a separate repository from [TraceMem-MM](https://github.com/cenzihan/tra
 It retrieves earlier engineering evidence; it does not solve the platform's tasks
 or execute retrieved code. No official Coding score is claimed.
 
+The `codex/dsh-source-context` candidate studies
+[DSH-inspired source/context separation](docs/deepseek-harness-adaptation.md).
+Its opt-in source windows are offline-tested; the deployedv0.1 service remains fixed.
+
 ## Model rules
 
 Checked against the [official guide](https://agentmemoryleaderboard.ai/api-guide)
