@@ -1,4 +1,4 @@
-# TraceMem-Code v0.2.0 access candidate
+# TraceMem-Code v0.2.1 access candidate
 
 This independent Coding service activates source-window context projection after
 code-aware BM25, exact path/symbol anchors and dense reciprocal-rank fusion.
@@ -33,8 +33,8 @@ must survive cleanup. Lease/retention dates belong to the concrete deployment.
 
 Offline validation covers format/type failures, exact original windows,
 cross-user isolation, Unicode/source offsets, idempotence, restart, immutable
-call guards, lease expiry and concurrent admission. All75 checks passed without
-providers. The earlier31-call pilot remains historical. Deployment preflight,
+call guards, lease expiry and concurrent admission. The previous candidate passed75 offline checks. The v0.2.1 patch adds
+recovery-state migration and fresh-dispatch regression checks without providers. The earlier31-call pilot remains historical. Deployment preflight,
 official approval and official Smoke are separate milestones; this release
 does not claim an official score or a measured improvement over v0.1.
 

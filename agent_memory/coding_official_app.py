@@ -13,7 +13,7 @@ from .provider_http import BAILIAN_BEIJING_ENDPOINT, SHARED_LEDGER
 from .providers import TextEmbeddingV4
 from .service_app import ServiceApplication
 
-VERSION = 'tracemem-code-v0.2.0'
+VERSION = 'tracemem-code-v0.2.1'
 
 
 class OfficialCodingTransport(CodingServiceTransport):
