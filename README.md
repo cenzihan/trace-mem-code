@@ -42,6 +42,9 @@ Run `python scripts/run_checks.py` with Python3.11 and Pillow installed.
 The standalone repository has41 Coding/transport checks. The development change
 also passed639 regression tests in the original development checkout.
 Offline tests use synthetic inputs and fake providers; they are not live results.
+The [v0.1 live engineering preflight](docs/v0.1-validation.md) also passed8 Add,
+8 Search and a post-restart Search using14 real GPT and17 embedding requests.
+It is a four-case Git-history diagnostic, not an official benchmark score.
 
 The pinned Dockerfile and `compose.coding.yaml` provide an independent development
 container on loopback port8768. Run with the original server ledger directory,
