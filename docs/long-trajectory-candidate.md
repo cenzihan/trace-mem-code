@@ -1,6 +1,15 @@
-# Long-trajectory candidate v0.2.3-rc1
+# Long-trajectory candidate v0.2.3-rc2
 
 Status: offline candidate only. Not deployed, bound or officially evaluated.
+
+The rc2 candidate adds a private, 64 KiB capped admission log inside the existing
+Coding state directory and retention scope. Each entry contains only UTC time,
+HTTP status and one of six fixed reasons: message count, per-message bytes,
+per-Add bytes, source span count, remaining provider calls, or remaining original
+budget. It never stores source text, identifiers, questions, credentials or raw
+exception messages. Existing entries are not rotated away; a full/unwritable log
+does not alter rejection or enable a model call. This can diagnose future
+capacity failures but cannot recover the missing historical failure branch.
 
 The earlier Coding service returned HTTP413 before model dispatch. Minimal HTTP
 metadata cannot identify which old capacity guard rejected the input. This

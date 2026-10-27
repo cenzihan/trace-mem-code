@@ -5,8 +5,10 @@ import sqlite3
 import tempfile
 from types import SimpleNamespace
 import unittest
+import json
 
-from agent_memory.coding_trajectory_app import TrajectoryCodingMemory, admit_trajectory
+from agent_memory.coding_trajectory_app import (TrajectoryCodingMemory, admit_trajectory,
+                                               BoundedAdmissionLog, admission_reason)
 from agent_memory.protocol import ContractError, canonical
 from test_coding import Cards, Embedding
 
@@ -116,6 +118,42 @@ class TrajectoryTests(unittest.TestCase):
         self.assertIn('remaining_original_budget', str(caught.exception))
         with connect() as db:
             self.assertEqual(db.execute('SELECT count(*) FROM operations').fetchone()[0], 11)
+
+    def test_rejection_diagnostics_never_log_source_ids_or_exception_text(self):
+        path = Path(self.tmp.name)/'admission.jsonl'
+        self.store.admission_diagnostic = BoundedAdmissionLog(path)
+        payload = self.payload(['private-source-sentinel']*1025)
+        payload['user_id'] = 'private-user-sentinel'
+        with self.assertRaises(ContractError):self.store.add(payload)
+        value = json.loads(path.read_text())
+        self.assertEqual(set(value), {'at', 'reason', 'status'})
+        self.assertEqual((value['reason'], value['status']), ('messages', 413))
+        self.assertNotIn('sentinel', path.read_text())
+        self.assertEqual((self.cards.calls, len(self.embedding.calls)), (0, 0))
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('select count(*) from add_operations').fetchone()[0], 0)
+
+    def test_diagnostic_whitelist_and_bound_preserve_history(self):
+        path = Path(self.tmp.name)/'admission.jsonl'
+        log = BoundedAdmissionLog(path)
+        for reason in ('message_source_bytes', 'add_source_bytes', 'source_segments'):
+            log(ContractError('coding capacity:'+reason+' limit=123', 413))
+        for reason in ('remaining_provider_calls', 'remaining_original_budget'):
+            log(ContractError('coding admission:'+reason, 503))
+        saved = path.read_bytes()
+        log(ContractError('sensitive arbitrary exception text', 413))
+        self.assertEqual(saved, path.read_bytes())
+        self.assertEqual(len(saved.splitlines()), 5)
+        log.limit = len(saved)
+        log(ContractError('coding admission:remaining_provider_calls', 503))
+        self.assertEqual(saved, path.read_bytes())
+        self.assertIsNone(admission_reason(ContractError('coding capacity:source_segments limit=1', 422)))
+
+    def test_diagnostic_io_failure_does_not_override_capacity_rejection(self):
+        self.store.admission_diagnostic = BoundedAdmissionLog(Path(self.tmp.name)/'missing'/'log.jsonl')
+        with self.assertRaises(ContractError) as caught:self.store.add(self.payload(['x']*1025))
+        self.assertEqual(caught.exception.status, 413)
+        self.assertEqual((self.cards.calls, len(self.embedding.calls)), (0, 0))
 
 
 if __name__ == '__main__': unittest.main()
