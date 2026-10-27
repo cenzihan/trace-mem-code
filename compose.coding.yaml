@@ -1,0 +1,42 @@
+# Independent development service. The original ledger directory must be shared
+# as a directory so SQLite uses the same lock/journal paths as the MM service.
+services:
+  coding:
+    build: .
+    image: trace-mem-code:development-v0.1.0
+    init: true
+    restart: unless-stopped
+    network_mode: host
+    command: [gunicorn, --config, /app/deploy/gunicorn.conf.py, --bind, '127.0.0.1:8768', --threads, '2', --max-requests, '0', 'agent_memory.coding_app:create_app()']
+    environment:
+      TRACEMEM_CODING_ENABLED: isolated-original-ledger
+      TRACEMEM_CODING_STATE: /app/runtime/coding-v1
+      TRACEMEM_CODING_CALL_LIMIT: '32'
+      TRACEMEM_CODING_EXPIRES_AT: ${TRACEMEM_CODING_EXPIRES_AT:?Explicit development expiry required}
+      TRACEMEM_AUTH_TOKEN_FILE: /run/secrets/coding_token
+      TRACEMEM_OPENAI_TOKEN_FILE: /run/secrets/openai_token
+      TRACEMEM_BAILIAN_TOKEN_FILE: /run/secrets/bailian_token
+      TRACEMEM_LEDGER_AUTHORITY_FILE: /run/config/ledger-authority.json
+      TRACEMEM_VERIFIED_PRICES_FILE: /run/config/verified-prices.json
+    volumes:
+      - ${TRACEMEM_ORIGINAL_ROOT:?Existing active ledger owner required}/runtime:/app/runtime
+      - ${TRACEMEM_ORIGINAL_ROOT}/runtime/official-v1:/app/runtime/official-v1:ro
+      - ${TRACEMEM_ORIGINAL_ROOT}/config:/run/config:ro
+      - ${TRACEMEM_ORIGINAL_ROOT}/secrets/openai_token:/run/secrets/openai_token:ro
+      - ${TRACEMEM_ORIGINAL_ROOT}/secrets/bailian_token:/run/secrets/bailian_token:ro
+      - ${TRACEMEM_CODING_TOKEN_FILE:?Separate private Bearer token required}:/run/secrets/coding_token:ro
+    read_only: true
+    tmpfs: ['/tmp:size=32m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    pids_limit: 64
+    mem_limit: 512m
+    cpus: 1.0
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8768/health',timeout=10).read()"]
+      interval: 60s
+      timeout: 12s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: 1m, max-file: '2'}

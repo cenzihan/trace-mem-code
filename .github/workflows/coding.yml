@@ -1,0 +1,24 @@
+name: Coding offline validation
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  coding:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Build pinned coding image
+        run: docker build --tag trace-mem-code:ci .
+      - name: Verify Coding and transport without providers
+        run: |
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges:true --tmpfs /tmp:mode=1777 \
+            --mount "type=bind,src=$GITHUB_WORKSPACE/tests,dst=/app/tests,readonly" \
+            trace-mem-code:ci python -B -m unittest discover -s tests -v
