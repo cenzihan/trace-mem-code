@@ -159,9 +159,12 @@ class AuxiliaryMetadataTests(unittest.TestCase):
         validator=object.__new__(ServiceBudgetedTransport);validator.model='gpt-4o-mini'
         validator._contract(view,{})
 
-    def test_nonarray_quotes_remain_invalid(self):
+    def test_nonarray_optional_quotes_are_omitted_without_interpretation(self):
         value=dict(choices=[dict(message=dict(content=json.dumps(dict(summary='x',evidence_quotes={'quote':'x'}))))])
-        with self.assertRaises(ProviderFailure):omit_nontext_quote_metadata(value)
+        original=json.dumps(value)
+        view=omit_nontext_quote_metadata(value)
+        self.assertEqual(json.loads(view['choices'][0]['message']['content'])['evidence_quotes'],[])
+        self.assertEqual(json.dumps(value),original)
 
     def test_oversize_query_rejected_before_model_or_store_access(self):
         store=object.__new__(ServingSystem)

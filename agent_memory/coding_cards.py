@@ -2,7 +2,7 @@
 import json
 
 from .protocol import content_parts, text_of
-from .providers import GPT4oMiniCards
+from .providers import GPT4oMiniCards, source_card_response_format
 
 
 class CodingCards(GPT4oMiniCards):
@@ -12,7 +12,7 @@ class CodingCards(GPT4oMiniCards):
             raise ValueError('coding cards require text sources')
         request = {
             'model':self.model, 'max_completion_tokens':512, 'store':False, 'n':1,
-            'response_format':{'type':'json_object'},
+            'response_format':source_card_response_format() if self.structured_output else {'type':'json_object'},
             'messages':[
                 {'role':'system','content':
                  'Return JSON with summary (string) and evidence_quotes (array of strings). '

@@ -31,7 +31,7 @@ new candidate extends source-grounded **context projection** after ranking:
 The source-window mode defaults to12288UTF8 bytes per window and32768 total,
 honors top_k and returns at most one window per original message. It never crops
 a matched span to fit. This trades evidence diversity for local continuity and
-needs an independent evaluation before adoption. It does not restore whole tool
+is enabled in the v0.2.0 access candidate. Retrieval-quality improvement remains unproven. It does not restore whole tool
 episodes: AML's text Add schema has user/assistant messages, not DSH tool-call
 events, so missing structural labels cannot be invented.
 
@@ -43,10 +43,11 @@ privacy policy excludes persistent evaluation queries and raw provider responses
 
 ## Activation and validation
 
-Use `CodingMemorySystem(path, context_policy='source-window')` in an isolated
-offline candidate. The existing constructor default remains `matched-spans`.
-The live factory and Docker deployment do not enable the new mode. Its capability
-version is `tracemem-code-v0.2-context-dev`, whereas the default staysv0.1.
+The versioned `coding_official_app` factory enables `source-window`, strict GPT
+JSON Schema,20-message admission and16 bounded HTTP admissions with one active
+model operation. `compose.coding-official.yaml` deploys v0.2.0 separately from
+the unchanged v0.1 development state and its exhausted pilot authorization.
+The constructor default remains `matched-spans` for existing research callers.
 
 Synthetic tests cover original order, source references, Unicode budgets,
 unindexed gaps, user/parent isolation, corrupted neighbors, stable restart,

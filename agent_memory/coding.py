@@ -165,8 +165,8 @@ class CodingMemorySystem(AgentMemorySystem):
         validate_add(payload)
         if any(not isinstance(message['content'], str) for message in payload['messages']):
             raise ContractError('Coding messages[].content must be a string')
-        if len(payload['messages']) > 16:
-            raise ContractError('coding capacity:16 messages per Add', 413)
+        if len(payload['messages']) > self.model_add_message_limit:
+            raise ContractError(f'coding capacity:{self.model_add_message_limit} messages per Add', 413)
         count = 0
         for message in payload['messages']:
             if len(message['content'].encode('utf-8')) > 128*1024:
