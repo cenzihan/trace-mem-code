@@ -1,4 +1,9 @@
-# TraceMem-Code v0.2.1 access candidate
+# TraceMem-Code v0.2.2 access candidate
+
+The v0.2.2 deployment adds a [shared registered-endpoint gateway](shared-endpoint.md)
+for the existing key's Coding and Multimodal permissions. The Coding backend's
+retrieval and provider implementation remains identical to v0.2.1. Separate
+repositories and data stores remain in use; no second access request is needed.
 
 This independent Coding service activates source-window context projection after
 code-aware BM25, exact path/symbol anchors and dense reciprocal-rank fusion.
@@ -14,7 +19,7 @@ quote metadata cannot be promoted to evidence. Search options are accepted but
 not persisted. Source/query instructions are data and are never executed.
 
 Run `compose.coding-official.yaml` with the existing server-owned ledger root,
-separate service token and explicit expiry. The factory requires dedicated
+the existing registered service token and explicit expiry. The factory requires dedicated
 `coding-official-v0.2` state and a fixed512-call lifetime traffic ceiling.
 This is not another money allowance: every request uses the same original CNY500
 ledger, with receipt-first accounting, unknown-call blocking and no automatic
