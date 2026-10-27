@@ -1,5 +1,5 @@
-# Start only after both fixed component deployments are ready. No provider keys
-# or memory volumes belong in this stateless gateway.
+# WITHDRAWN for official evaluations: string Multimodal requests are ambiguous.
+# Historical transport only. Use a fixed backend; see docs/shared-endpoint.md.
 services:
   gateway:
     image: trace-mem-code:v0.2.2

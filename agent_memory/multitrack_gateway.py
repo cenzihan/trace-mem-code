@@ -1,5 +1,7 @@
-"""One registered AML endpoint, two fixed services selected by wire format.
+"""Withdrawn wire-format routing experiment; do not serve official evaluations.
 
+The AML contract permits string Multimodal requests, so the types overlap.
+Use an explicitly selected fixed backend; see docs/shared-endpoint.md.
 No model, dataset inspection, persistence, request logging or automatic retries.
 The original request and response bytes pass through unchanged.
 """
