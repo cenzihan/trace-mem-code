@@ -1,4 +1,4 @@
-# Long-trajectory candidate v0.2.3-rc2
+# Long-trajectory candidate v0.2.3-rc3
 
 Status: offline candidate only. Not deployed, bound or officially evaluated.
 
@@ -35,8 +35,15 @@ These are explicit local admission bounds, not a promise that the finite provide
 allowance can fund every maximum-size request. Before claiming an Add or calling
 a model, the service checks the entire planned call count against the remaining
 original512-call Coding lifetime guard and checks conservative cost against the
-original money ledger. It retains the existing5CNY readiness floor. Per-call
-reservations remain authoritative if another service consumes shared funds.
+original money ledger. Rc3 also keeps16 calls and their conservative embedding
+allowance available for Search, in addition to the existing5CNY readiness floor.
+An Add that consumes every remaining slot would otherwise succeed but leave
+the newly stored sources unavailable to query embedding. With11 lifetime calls
+already used, up to431 source spans fit this guard:431 GPT calls plus54 embedding
+batches leave16 query calls. A445-span Add would exhaust the guard and is rejected
+before Add claim or model dispatch. These are call-count bounds, not latency or
+benchmark guarantees. Per-call reservations remain authoritative if another
+service consumes shared funds; this does not create a separate money budget.
 
 All source messages, roles, timestamps and ordering remain intact. Index work is
 batched internally; success is returned only after every source and index commits

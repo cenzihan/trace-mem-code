@@ -13,7 +13,10 @@ from .coding import CodingMemorySystem, segments
 from .coding_official_app import create_app as create_official_app
 from .protocol import ContractError
 
-VERSION = 'tracemem-code-v0.2.3-rc2'
+VERSION = 'tracemem-code-v0.2.3-rc3'
+# The 512-call lifetime ceiling is unchanged. Add may not consume these slots;
+# each subsequent Search can still perform its single query embedding.
+SEARCH_CALL_RESERVE = 16
 
 
 def admission_reason(error):
@@ -89,6 +92,7 @@ class TrajectoryCodingMemory(CodingMemorySystem):
                     max_add_source_bytes=self.add_source_bytes,
                     max_add_source_segments=self.add_segments,
                     embedding_batch_items=8,
+                    query_embedding_call_reserve=SEARCH_CALL_RESERVE,
                     add_commit='atomic-after-all-source-indexing',
                     admission_diagnostics='bounded-whitelist-no-content')
 
@@ -104,11 +108,11 @@ def admit_trajectory(transport, segments_count):
     required_calls = segments_count + (segments_count + 7) // 8
     with transport.journal.connect() as db:
         used = db.execute('SELECT count(*) FROM operations').fetchone()[0]
-    if used + required_calls > transport.call_limit:
+    if used + required_calls + SEARCH_CALL_RESERVE > transport.call_limit:
         raise ContractError('coding admission:remaining_provider_calls', 503)
     # Exact existing conservative GPT hold + full8192-token embedding admission,
     # at the fixed verified0.5CNY/million input rate. Keep the5CNY readiness floor.
-    required_money = segments_count * (250000 + 4096) + 5000000
+    required_money = segments_count * (250000 + 4096) + SEARCH_CALL_RESERVE * 4096 + 5000000
     if transport.ledger.totals()['remaining_micro_cny'] < required_money:
         raise ContractError('coding admission:remaining_original_budget', 503)
 

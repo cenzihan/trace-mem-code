@@ -110,14 +110,63 @@ class TrajectoryTests(unittest.TestCase):
         transport = SimpleNamespace(ready=lambda: None, call_limit=512,
             journal=SimpleNamespace(connect=connect),
             ledger=SimpleNamespace(totals=lambda: {'remaining_micro_cny': remaining[0]}))
-        admit_trajectory(transport, 445)
-        with self.assertRaises(ContractError) as caught: admit_trajectory(transport, 446)
+        admit_trajectory(transport, 431)
+        with self.assertRaises(ContractError) as caught: admit_trajectory(transport, 432)
         self.assertIn('remaining_provider_calls', str(caught.exception))
         remaining[0] = 5000000
         with self.assertRaises(ContractError) as caught: admit_trajectory(transport, 1)
         self.assertIn('remaining_original_budget', str(caught.exception))
         with connect() as db:
             self.assertEqual(db.execute('SELECT count(*) FROM operations').fetchone()[0], 11)
+
+    def test_write_that_would_leave_no_search_allowance_never_starts(self):
+        path = Path(self.tmp.name)/'reserve-receipts.sqlite'
+        @contextmanager
+        def connect():
+            db = sqlite3.connect(path)
+            try:
+                with db: yield db
+            finally: db.close()
+        with connect() as db:
+            db.execute('CREATE TABLE operations(id INTEGER)')
+            db.executemany('INSERT INTO operations VALUES(?)', [(i,) for i in range(11)])
+        transport = SimpleNamespace(ready=lambda: None, call_limit=512,
+            journal=SimpleNamespace(connect=connect),
+            ledger=SimpleNamespace(totals=lambda: {'remaining_micro_cny': 200000000}))
+        self.store.admission_check = lambda count: admit_trajectory(transport, count)
+        # 445 GPT + 56 embedding calls fit the old ceiling exactly, leaving
+        # zero query calls. Refuse before writing any Add journal or content.
+        with self.assertRaises(ContractError) as caught:
+            self.store.add(self.payload(['def independent_function(): pass']*445))
+        self.assertEqual(str(caught.exception), 'coding admission:remaining_provider_calls')
+        self.assertEqual((self.cards.calls, len(self.embedding.calls)), (0, 0))
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('select count(*) from add_operations').fetchone()[0], 0)
+            self.assertEqual(db.execute('select count(*) from memories').fetchone()[0], 0)
+        with connect() as db:
+            self.assertEqual(db.execute('select count(*) from operations').fetchone()[0], 11)
+
+    def test_query_money_reserve_is_required_before_source_work(self):
+        @contextmanager
+        def connect():
+            db = sqlite3.connect(':memory:')
+            try:
+                db.execute('CREATE TABLE operations(id INTEGER)')
+                yield db
+            finally: db.close()
+        # Sufficient for the previous one-span Add check and 5CNY floor,
+        # but insufficient for sixteen conservative query embeddings.
+        remaining = [5254096]
+        transport = SimpleNamespace(ready=lambda: None, call_limit=512,
+            journal=SimpleNamespace(connect=connect),
+            ledger=SimpleNamespace(totals=lambda: {'remaining_micro_cny': remaining[0]}))
+        self.store.admission_check = lambda count: admit_trajectory(transport, count)
+        with self.assertRaises(ContractError) as caught:
+            self.store.add(self.payload(['def independent_function(): pass']))
+        self.assertEqual(str(caught.exception), 'coding admission:remaining_original_budget')
+        self.assertEqual((self.cards.calls, len(self.embedding.calls)), (0, 0))
+        remaining[0] += 65536
+        admit_trajectory(transport, 1)
 
     def test_rejection_diagnostics_never_log_source_ids_or_exception_text(self):
         path = Path(self.tmp.name)/'admission.jsonl'

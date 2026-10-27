@@ -5,8 +5,8 @@ This is a separate repository from [TraceMem-MM](https://github.com/cenzihan/tra
 It retrieves earlier engineering evidence; it does not solve the platform's tasks
 or execute retrieved code. No official Coding score is claimed.
 
-The [v0.2.3-rc1 long-trajectory candidate](docs/long-trajectory-candidate.md)
-expands source admission and checks whole-Add model allowance before dispatch.
+The [v0.2.3-rc3 long-trajectory candidate](docs/long-trajectory-candidate.md)
+expands source admission and reserves query calls before whole-Add dispatch.
 It is an offline candidate; the deployed v0.2.2 profile is unchanged.
 
 The official v0.2 profile uses
