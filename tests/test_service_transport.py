@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timezone, timedelta
 
 from agent_memory.budget import BudgetLedger, VerifiedRate
@@ -11,6 +12,8 @@ from agent_memory.service_transport import ServiceTransport, ServiceBudgetedTran
 from agent_memory.service_app import ServiceApplication, ServingSystem
 from agent_memory.protocol import ContractError
 from agent_memory.store import MemoryStore
+from agent_memory.providers import GPT4oMiniCards
+from agent_memory.embedding_executor import _Journal
 
 
 class FakeHTTP:
@@ -159,17 +162,124 @@ class AuxiliaryMetadataTests(unittest.TestCase):
         validator=object.__new__(ServiceBudgetedTransport);validator.model='gpt-4o-mini'
         validator._contract(view,{})
 
-    def test_nonarray_optional_quotes_are_omitted_without_interpretation(self):
-        value=dict(choices=[dict(message=dict(content=json.dumps(dict(summary='x',evidence_quotes={'quote':'x'}))))])
-        original=json.dumps(value)
-        view=omit_nontext_quote_metadata(value)
-        self.assertEqual(json.loads(view['choices'][0]['message']['content'])['evidence_quotes'],[])
-        self.assertEqual(json.dumps(value),original)
+    def test_nonarray_quotes_are_discarded_without_interpreting_their_values(self):
+        for auxiliary in ({'quote':'invented'},'invented',None,5):
+            value=dict(choices=[dict(message=dict(content=json.dumps(dict(summary='unchanged',evidence_quotes=auxiliary))))])
+            original=json.dumps(value)
+            card=json.loads(omit_nontext_quote_metadata(value)['choices'][0]['message']['content'])
+            self.assertEqual(card['summary'],'unchanged');self.assertEqual(card['evidence_quotes'],[])
+            self.assertEqual(card['omitted_quote_container_type'],type(auxiliary).__name__)
+            self.assertEqual(json.dumps(value),original)
+
+    def test_substantive_invalid_summary_and_truncated_outputs_still_fail(self):
+        validator=object.__new__(ServiceBudgetedTransport);validator.model='gpt-4o-mini'
+        for summary,finish in [(None,'stop'),('valid','length')]:
+            value=dict(choices=[dict(finish_reason=finish,message=dict(content=json.dumps(dict(summary=summary,evidence_quotes={})) ))])
+            with self.assertRaises(ProviderFailure):validator._contract(value,{})
 
     def test_oversize_query_rejected_before_model_or_store_access(self):
         store=object.__new__(ServingSystem)
         with self.assertRaises(ContractError) as exc:store.search(dict(user_id='fixture',query='x'*8193,top_k=20))
         self.assertEqual(exc.exception.status,413)
+
+
+class DiscardedAuxiliaryFailureTests(unittest.TestCase):
+    setUp=ServiceTransportTests.setUp
+    make=ServiceTransportTests.make
+
+    def legacy_failure(self, *, summary='synthetic summary',category='invalid_contract'):
+        value=dict(model='gpt-4o-mini-2024-07-18',usage=dict(prompt_tokens=5,completion_tokens=5,total_tokens=10),
+            choices=[dict(finish_reason='stop',message=dict(content=json.dumps(dict(summary=summary,evidence_quotes={'quote':'synthetic'}))))])
+        def exchange(*args):
+            self.http.calls+=1;return HTTPReply(200,json.dumps(value).encode())
+        self.http.exchange=exchange
+        transport=self.make()
+        with patch.object(ServiceBudgetedTransport,'_contract',side_effect=ProviderFailure(category)):
+            with self.assertRaises(ProviderFailure):
+                GPT4oMiniCards(transport).extract([{'type':'text','text':'Synthetic test source'}])
+        with transport.journal.connect() as db:row=dict(db.execute("SELECT * FROM operations WHERE state='failed'").fetchone())
+        return transport,row
+
+    def test_acknowledgement_preserves_failure_budget_and_never_replays(self):
+        transport,row=self.legacy_failure()
+        with transport.ledger.connect() as db:
+            before=(db.execute('SELECT * FROM attempts').fetchall(),db.execute('SELECT * FROM provider_observations').fetchall())
+        proof=transport.discard_known_auxiliary_failure(row['attempt_id'],row['body_sha'])
+        self.assertEqual(proof['model_calls'],0);self.assertFalse(proof['failed_add_resumed'])
+        self.assertEqual(self.http.calls,1)
+        with transport.journal.connect() as db:
+            after=dict(db.execute('SELECT * FROM operations').fetchone())
+            self.assertEqual(db.execute('SELECT count(*) FROM discarded_auxiliary_failures').fetchone()[0],1)
+        self.assertEqual(after['state'],'failed');self.assertEqual(after['attempt_id'],row['attempt_id'])
+        self.assertEqual(after['body_sha'],row['body_sha']);self.assertIsNone(after['body'])
+        self.assertEqual(after['receipt_policy'],'discarded_known_failure')
+        with transport.ledger.connect() as db:
+            self.assertEqual(before,(db.execute('SELECT * FROM attempts').fetchall(),db.execute('SELECT * FROM provider_observations').fetchall()))
+        self.make().ready()
+        with self.assertRaises(ValueError):transport.discard_known_auxiliary_failure(row['attempt_id'],row['body_sha'])
+        with self.assertRaises(ValueError):_Journal(self.p/'receipts',True)
+
+    def test_wrong_digest_does_not_unblock_or_remove_response(self):
+        transport,row=self.legacy_failure()
+        with self.assertRaises(ValueError):transport.discard_known_auxiliary_failure(row['attempt_id'],'0'*64)
+        with self.assertRaises(ValueError):transport.ready()
+        self.assertEqual(transport.journal.row(row['fingerprint'])['body'],row['body'])
+        self.assertEqual(self.http.calls,1)
+
+    def test_acknowledged_failure_allows_new_dispatch_after_restart(self):
+        transport,row=self.legacy_failure()
+        transport.discard_known_auxiliary_failure(row['attempt_id'],row['body_sha'])
+        with transport.journal.connect() as db:db.execute('DROP TABLE undispatched_retirements')
+        restarted=self.make()
+        GPT4oMiniCards(restarted,structured_output=True).extract('Fresh independent synthetic source')
+        self.assertEqual(self.http.calls,2)
+        self.assertEqual(restarted.journal.row(row['fingerprint'])['state'],'failed')
+        restarted.ready()
+
+    def test_pristine_prepared_retirement_preserves_rows_and_allows_new_call(self):
+        transport,row=self.legacy_failure()
+        transport.discard_known_auxiliary_failure(row['attempt_id'],row['body_sha'])
+        transport.journal.install('never-sent','official-service-v1',{'keys':['never-sent'],'model':'gpt-4o-mini'})
+        with self.assertRaises(ValueError):transport.ready()
+        proof=transport.retire_undispatched('never-sent');self.assertEqual(proof['model_calls'],0)
+        GPT4oMiniCards(self.make(),structured_output=True).extract('New independent source')
+        self.assertEqual(self.http.calls,2)
+        self.assertEqual(transport.journal.row('never-sent')['state'],'abandoned_before_dispatch')
+        with self.assertRaises(ValueError):transport.retire_undispatched('never-sent')
+
+    def test_retirement_never_accepts_started_or_unknown_operation(self):
+        transport=self.make();transport.journal.install('started','official-service-v1',{'keys':['started']})
+        transport.journal.start('started')
+        with self.assertRaises(ValueError):transport.retire_undispatched('started')
+        transport.journal.unknown('started')
+        with self.assertRaises(ValueError):transport.retire_undispatched('started')
+        with self.assertRaises(ValueError):transport.ready()
+        self.assertEqual(self.http.calls,0)
+
+    def test_corrupt_acknowledgement_blocks_dispatch_atomically(self):
+        transport,row=self.legacy_failure();transport.discard_known_auxiliary_failure(row['attempt_id'],row['body_sha'])
+        with transport.journal.connect() as db:db.execute("UPDATE discarded_auxiliary_failures SET body_sha='bad'")
+        transport.journal.install('fresh','official-service-v1',{'keys':['fresh']})
+        with self.assertRaises(RuntimeError):transport.journal.start('fresh')
+        self.assertEqual(transport.journal.row('fresh')['state'],'ready');self.assertEqual(self.http.calls,1)
+
+    def test_invalid_summary_cannot_be_acknowledged(self):
+        transport,row=self.legacy_failure(summary=None)
+        with self.assertRaises(ProviderFailure):transport.discard_known_auxiliary_failure(row['attempt_id'],row['body_sha'])
+        with self.assertRaises(ValueError):transport.ready()
+
+    def test_other_failure_categories_remain_blocked(self):
+        transport,row=self.legacy_failure(category='invalid_usage')
+        with self.assertRaises(ValueError):transport.discard_known_auxiliary_failure(row['attempt_id'],row['body_sha'])
+        with self.assertRaises(ValueError):transport.ready()
+
+    def test_unknown_attempt_cannot_be_acknowledged(self):
+        transport=self.make();self.http.failure=True
+        with self.assertRaises(ProviderFailure):transport(BAILIAN_BEIJING_ENDPOINT,self.payload)
+        with transport.journal.connect() as db:row=dict(db.execute('SELECT * FROM operations').fetchone())
+        with self.assertRaises(ValueError):transport.discard_known_auxiliary_failure(row['attempt_id'],'0'*64)
+        with self.assertRaises(ValueError):transport.ready()
+        self.assertEqual(self.http.calls,1)
 
 
 if __name__=='__main__':unittest.main()

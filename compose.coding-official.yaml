@@ -3,7 +3,7 @@
 services:
   coding:
     build: .
-    image: trace-mem-code:v0.2.0
+    image: trace-mem-code:v0.2.1
     init: true
     restart: unless-stopped
     network_mode: host

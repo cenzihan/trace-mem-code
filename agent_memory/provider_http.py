@@ -237,6 +237,11 @@ class BudgetedJSONTransport:
             if not isinstance(card,dict) or not isinstance(card.get('summary'),str) or not isinstance(card.get('evidence_quotes'),list) or any(not isinstance(q,str) for q in card['evidence_quotes']):
                 raise ProviderFailure('invalid_contract')
 
+    def _response_model(self, data):
+        allowed={self.model} if self.model=='text-embedding-v4' else {'gpt-4o-mini','gpt-4o-mini-2024-07-18'}
+        if data.get('model') not in allowed:raise ProviderFailure('model_mismatch')
+        return data['model']
+
     def __call__(self,endpoint,payload):
         if endpoint!=self.endpoint:raise ValueError('endpoint changed after configuration')
         validate_endpoint(self.model,endpoint)
@@ -287,9 +292,7 @@ class BudgetedJSONTransport:
                 except (ValueError,UnicodeError):raise ProviderFailure('invalid_json') from None
                 if not isinstance(data,dict):raise ProviderFailure('invalid_contract')
                 usage=self._usage(data)
-                allowed={self.model} if self.model=='text-embedding-v4' else {'gpt-4o-mini','gpt-4o-mini-2024-07-18'}
-                if data.get('model') not in allowed:raise ProviderFailure('model_mismatch')
-                returned=data['model'];self._contract(data,payload)
+                returned=self._response_model(data);self._contract(data,payload)
                 category='success'
             except ProviderFailure as exc:category=exc.category
             except TimeoutError:category='timeout'
