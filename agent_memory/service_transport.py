@@ -85,6 +85,8 @@ class _ServiceJournal(_Journal):
             if current is None or current['state']!='ready' or not never_dispatched(current):
                 raise EmbeddingExecutorBlocked('operation already attempted; no automatic replay')
             for row in db.execute("SELECT * FROM operations WHERE scope=? AND state NOT IN ('ready','complete')",(current['scope'],)):
+                recovery=getattr(self,'coding_recovery',None)
+                if recovery is not None and recovery.permits(row):continue
                 proof=db.execute('SELECT * FROM discarded_auxiliary_failures WHERE fingerprint=?',(row['fingerprint'],)).fetchone()
                 retired=db.execute('SELECT 1 FROM undispatched_retirements WHERE fingerprint=?',(row['fingerprint'],)).fetchone()
                 if acknowledged_failure(row,proof):continue
@@ -162,6 +164,8 @@ class ServiceTransport:
             discarded = {row['fingerprint']:dict(row) for row in db.execute('SELECT * FROM discarded_auxiliary_failures')}
             retired = {row[0] for row in db.execute('SELECT fingerprint FROM undispatched_retirements')}
         for row in rows:
+            recovery=getattr(self,'coding_recovery',None)
+            if recovery is not None and recovery.permits(row):continue
             proof = discarded.get(row['fingerprint'])
             if acknowledged_failure(row,proof):continue
             if row['state']=='abandoned_before_dispatch' and row['fingerprint'] in retired and never_dispatched(row):continue

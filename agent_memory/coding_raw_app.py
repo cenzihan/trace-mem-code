@@ -13,18 +13,37 @@ from .coding_trajectory_app import (TrajectoryCodingMemory, BoundedAdmissionLog,
 from .protocol import ContractError
 from .provider_http import BAILIAN_BEIJING_ENDPOINT
 
-VERSION = 'tracemem-code-raw-v0.3.0-rc2'
+VERSION = 'tracemem-code-raw-v0.3.0-rc3'
 
 
 class RawCodingTransport(OfficialCodingTransport):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        from .coding_recovery import CodingRecovery
+        self.coding_recovery=CodingRecovery(self.journal.root/'coding-operator-recovery.json',self.journal,self.ledger)
+        self.journal.coding_recovery=self.coding_recovery
+
     def __call__(self, endpoint, payload):
         # Reject before journal preparation, money reservation or credential access.
         if payload.get('model') != 'text-embedding-v4' or endpoint != BAILIAN_BEIJING_ENDPOINT:
             raise ValueError('raw Coding permits only text-embedding-v4')
+        self.coding_recovery.assert_texts(payload.get('input',[]))
         return super().__call__(endpoint, payload)
 
 
 class RawTrajectoryCodingMemory(TrajectoryCodingMemory):
+    source_guard = None
+
+    def add(self,payload):
+        if self.source_guard is not None and isinstance(payload,dict) and isinstance(payload.get('user_id'),str):
+            self.source_guard(payload['user_id'])
+        return super().add(payload)
+
+    def retrieve(self,payload):
+        if self.source_guard is not None and isinstance(payload,dict) and isinstance(payload.get('user_id'),str):
+            self.source_guard(payload['user_id'])
+        return super().retrieve(payload)
+
     def __init__(self, *args, **kwargs):
         if kwargs.get('card_adapter') is not None:
             raise ValueError('raw Coding cannot construct an LLM source adapter')
@@ -70,6 +89,7 @@ def create_app(environ=None):
     app = create_official_app(env, memory_type=RawTrajectoryCodingMemory,
         version=VERSION, transport_type=RawCodingTransport, source_cards=False)
     app.store.admission_check = lambda count: admit_raw_trajectory(app.transport, count)
+    app.store.source_guard = app.transport.coding_recovery.assert_user
     app.store.admission_diagnostic = BoundedAdmissionLog(
         Path(env['TRACEMEM_CODING_STATE'])/'admission-metadata.jsonl')
     return app
