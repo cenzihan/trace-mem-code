@@ -7,12 +7,13 @@ import os
 from pathlib import Path
 
 from .coding_official_app import OfficialCodingTransport, create_app as create_official_app
+from .coding import segments
 from .coding_trajectory_app import (TrajectoryCodingMemory, BoundedAdmissionLog,
                                     SEARCH_CALL_RESERVE)
 from .protocol import ContractError
 from .provider_http import BAILIAN_BEIJING_ENDPOINT
 
-VERSION = 'tracemem-code-raw-v0.3.0-rc1'
+VERSION = 'tracemem-code-raw-v0.3.0-rc2'
 
 
 class RawCodingTransport(OfficialCodingTransport):
@@ -28,6 +29,16 @@ class RawTrajectoryCodingMemory(TrajectoryCodingMemory):
         if kwargs.get('card_adapter') is not None:
             raise ValueError('raw Coding cannot construct an LLM source adapter')
         super().__init__(*args, **kwargs)
+
+    def _preflight_add(self, payload):
+        # Add already validates structured timestamps and source capacities.
+        # Raw code/log strings are evidence, not the parent's FACT event grammar.
+        if self.retrieval.dense and len(payload['messages']) > self.dense_add_message_limit:
+            raise ContractError(f'local dense Add capacity is {self.dense_add_message_limit} messages', 413)
+        count = sum(1 for message in payload['messages']
+                    for _, _, source in segments(message['content']) if source.strip())
+        if self.admission_check is not None:
+            self.admission_check(count)
 
     def capabilities(self):
         return dict(super().capabilities(), version=VERSION,

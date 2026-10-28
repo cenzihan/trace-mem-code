@@ -1,4 +1,4 @@
-# Raw trajectory candidate v0.3.0-rc1
+# Raw trajectory candidate v0.3.0-rc2
 
 Status: independent offline candidate, not deployed or officially scored.
 This is stacked on the long-trajectory capacity candidate, preserving its source
@@ -31,3 +31,12 @@ and money bounds, later-batch uncertainty, and GPT dispatch rejection. These are
 engineering controls, not benchmark quality or real latency measurements. The
 historical HTTP413 branch remains unknown. Real bounded validation and a separate
 fixed-backend window are still required before deployment or official Smoke.
+
+The rc2 preflight treats source text literally. A code fixture or log line matching
+the inherited `FACT ... event=...` template, including an intentionally invalid
+date, no longer causes a422 rejection of the entire Add. This was reproduced with
+independent synthetic source text before the fix. Structured message timestamps,
+capacity checks and whole-Add provider/money admission remain enforced before
+claiming work. Regression controls check exact source retrieval, restart replay,
+user isolation, invalid structured timestamps and denied-budget admission. This
+is a separate observed defect; it does not diagnose the historical413 failure.

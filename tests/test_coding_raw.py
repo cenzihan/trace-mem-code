@@ -122,5 +122,58 @@ class RawTrajectoryTests(unittest.TestCase):
         for count in (-1,2049,1.5,True):
             with self.assertRaises(ValueError):admit_raw_trajectory(None,count)
 
+    def test_fact_like_code_is_literal_source_not_event_metadata(self):
+        texts = [
+            'def HTTPAdapter():\n    fixture = "FACT entity=fixture attribute=date '
+            'value=invalid event=2024-99-99T99:99:99Z"\n',
+            'Log fixture: LINK entity=fixture related=other\n'
+            'FACT entity=fixture attribute=date value=invalid event=2023-02-29T00:00:00Z',
+        ]
+        counts = []
+        self.store.admission_check = counts.append
+        payload = self.payload(texts, request='literal-source')
+        self.assertTrue(self.store.add(payload)['success'])
+        self.assertEqual(counts, [2])
+        with self.store.connect() as db:
+            stored = [json.loads(row[0])[0]['text'] for row in db.execute('SELECT content FROM memories')]
+            self.assertEqual(set(stored), set(texts))
+            self.assertEqual(db.execute('SELECT count(*) FROM facts').fetchone()[0], 0)
+            self.assertEqual(db.execute('SELECT count(*) FROM entity_links').fetchone()[0], 0)
+        before = len(self.embedding.calls)
+        restarted = self.open()
+        self.assertTrue(restarted.add(payload)['success'])
+        self.assertEqual(len(self.embedding.calls), before)
+        result = restarted.search(dict(user_id='owner', query='HTTPAdapter', top_k=100))
+        self.assertTrue(result['data'])
+        self.assertTrue(all(row['content'] in texts for row in result['data']))
+        self.assertEqual(len(self.embedding.calls), before+1)
+        self.assertEqual(restarted.search(dict(user_id='outsider', query='HTTPAdapter', top_k=100)), {'data': []})
+        self.assertEqual(len(self.embedding.calls), before+1)
+
+    def test_structured_timestamp_still_rejected_before_claim(self):
+        for timestamp in ('invalid', True, 10**30):
+            with self.subTest(timestamp=timestamp):
+                payload = self.payload(['HTTPAdapter()'])
+                payload['messages'][0]['timestamp'] = timestamp
+                with self.assertRaises(ContractError):self.store.add(payload)
+        self.assertEqual(self.embedding.calls, [])
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM add_operations').fetchone()[0], 0)
+
+    def test_literal_source_still_obeys_whole_add_admission(self):
+        seen = []
+        def deny(count):
+            seen.append(count)
+            raise ContractError('coding admission:remaining_provider_calls', 503)
+        self.store.admission_check = deny
+        with self.assertRaises(ContractError) as caught:
+            self.store.add(self.payload(['HTTPAdapter() FACT entity=x attribute=y '
+                'value=z event=2024-99-99T99:99:99Z']))
+        self.assertEqual(caught.exception.status, 503)
+        self.assertEqual(seen, [1])
+        self.assertEqual(self.embedding.calls, [])
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM add_operations').fetchone()[0], 0)
+
 
 if __name__=='__main__':unittest.main()
